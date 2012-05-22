@@ -909,7 +909,7 @@ add_block(ospfs_inode_t *oi)
 	}
 
 	// increment file size
-	oi->oi_size += OSPFS_BLKSIZE;
+	oi->oi_size = (n + 1) * OSPFS_BLKSIZE;
 
 	return 0;
 }
@@ -937,14 +937,87 @@ add_block(ospfs_inode_t *oi)
 // you set the block pointer to 0.  Don't leave pointers to
 // deallocated blocks laying around!
 
+static inline uint32_t
+get_block_no(uint32_t container, int slot)
+{
+	return ((uint32_t*)ospfs_block(container))[slot];
+}
+
 static int
 remove_block(ospfs_inode_t *oi)
 {
 	// current number of blocks in file
 	uint32_t n = ospfs_size2nblocks(oi->oi_size);
 
+	if(n == 0)
+		return 0;
+
 	/* EXERCISE: Your code here */
-	return -EIO; // Replace this line
+
+	// we're still within direct blocks 
+	if(n < OSPFS_NDIRECT)
+	{
+		free_block(oi->oi_direct[n]);
+		oi->oi_direct[n] = 0;
+	}
+	// we just used up the direct blocks
+	else if(n == OSPFS_NDIRECT)
+	{
+		// dealloc the data block
+		free_block(get_block_no(oi->oi_indirect, 0));
+
+		// dealloc the indirect block
+		free_block(oi->oi_indirect);
+		oi->oi_indirect = 0;	
+	}
+	// we're using indirect blocks
+	else if(indir_index(n) == 0)
+	{
+		free_block(get_block_no(oi->oi_indirect, direct_index(n)));
+		set_blk_ptr(oi->oi_indirect, direct_index(n), 0);
+	}
+	// we just used up the indirect blocks
+	else if(n == OSPFS_NDIRECT + OSPFS_NINDIRECT)
+	{
+		// dealloc data block
+		uint32_t indir = get_block_no(oi->oi_indirect2, 0);
+		free_block(get_block_no(indir, 0));
+
+		// dealloc indir block
+		free_block(indir);
+
+		// dealloc indir2 block
+		free_block(oi->oi_indirect2);
+		oi->oi_indirect2 = 0;
+	}
+	// we're using one of the doubly indir blocks
+	else if(indir_index(n) > 0 && direct_index(n) != 0)
+	{
+		uint32_t indir = get_block_no(oi->oi_indirect2, indir_index(n));
+		free_block(get_block_no(indir, direct_index(n)));
+		set_blk_ptr(indir, direct_index(n), 0);
+	}
+	// we've just used up one of the doubly indir blocks
+	else if(n < OSPFS_MAXFILEBLKS && indir_index(n) > 0 && direct_index(n) == 0)
+	{
+		// dealloc data block
+		uint32_t indir = get_block_no(oi->oi_indirect2, 0);
+		free_block(get_block_no(indir, 0));
+
+		// dealloc indir block
+		free_block(indir);
+		set_blk_ptr(oi->oi_indirect2, indir_index(n), 0);
+	}
+	else
+	{
+		// should not reach this part
+		panic("Uncaught case in remove_block\n");
+	}
+
+	// decrement file size
+	oi->oi_size = (n - 1) * OSPFS_BLKSIZE;
+
+	return 0; // Replace this line
 }
 
 
@@ -987,6 +1060,8 @@ remove_block(ospfs_inode_t *oi)
 static int
 change_size(ospfs_inode_t *oi, uint32_t new_size)
 {
+	eprintk("Attempting to change size from %d to %d\n", oi->oi_size, new_size);
+
 	uint32_t old_size = oi->oi_size;
 	int r = 0;
 
@@ -1146,6 +1221,9 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 static ssize_t
 ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *f_pos)
 {
+	eprintk("Attempting to write %lu bytes at offset %lu to file at inode %d\n",
+		count, *f_pos, filp->f_dentry->d_inode->i_ino);
+
 	ospfs_inode_t *oi = ospfs_inode(filp->f_dentry->d_inode->i_ino);
 	int retval = 0;
 	size_t amount = 0;
@@ -1390,7 +1468,7 @@ ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidat
 	ospfs_inode_t* empty_inode = NULL;
 	ospfs_inode_t* first_inode = ospfs_block(ospfs_super->os_firstinob);
 	uint32_t i;
-	for(i = 0; i < ospfs_super->os_ninodes; i++)
+	for(i = 1; i < ospfs_super->os_ninodes; i++)
 	{
 		if(first_inode[i].oi_nlink == 0)
 		{
