@@ -556,6 +556,11 @@ ospfs_unlink(struct inode *dirino, struct dentry *dentry)
 
 	od->od_ino = 0;
 	oi->oi_nlink--;
+
+	// clean up the file if it's dead
+	if(oi->oi_nlink == 0)
+		change_size(oi, 0);
+
 	return 0;
 }
 
@@ -588,7 +593,7 @@ static uint32_t
 allocate_block(void)
 {
 
-	eprintk("trying to allocate a block... \n");
+	// eprintk("trying to allocate a block... \n");
 
 	// get the pointer to the start of the bitmap
 	void* ptr_to_bitmap = ospfs_block(OSPFS_FREEMAP_BLK); 
@@ -1060,10 +1065,9 @@ remove_block(ospfs_inode_t *oi)
 static int
 change_size(ospfs_inode_t *oi, uint32_t new_size)
 {
-	eprintk("Attempting to change size from %d to %d\n", oi->oi_size, new_size);
+	// eprintk("Attempting to change size from %d to %d\n", oi->oi_size, new_size);
 
 	uint32_t old_size = oi->oi_size;
-	int r = 0;
 
 	while (ospfs_size2nblocks(oi->oi_size) < ospfs_size2nblocks(new_size)) {
 	        /* EXERCISE: Your code here */
@@ -1221,8 +1225,8 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 static ssize_t
 ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *f_pos)
 {
-	eprintk("Attempting to write %lu bytes at offset %lu to file at inode %d\n",
-		count, *f_pos, filp->f_dentry->d_inode->i_ino);
+	//eprintk("Attempting to write %lu bytes at offset %lu to file at inode %d\n",
+	//	count, *f_pos, filp->f_dentry->d_inode->i_ino);
 
 	ospfs_inode_t *oi = ospfs_inode(filp->f_dentry->d_inode->i_ino);
 	int retval = 0;
@@ -1393,28 +1397,36 @@ static int
 ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dentry) {
 	/* EXERCISE: Your code here. */
 	
+	ospfs_inode_t* dir_oi = ospfs_inode(dir->i_ino);
+
+	/*eprintk("Attempting link:\n  source (real data): %s inode %d\n  destination: %s\n",
+		src_dentry->d_name.name,
+		src_dentry->d_inode->i_ino,
+		dst_dentry->d_name.name);*/
+
 	if(dst_dentry->d_name.len > OSPFS_MAXNAMELEN)
 		return -ENAMETOOLONG;
 
-	if(find_direntry(ospfs_inode(dir->i_ino), dst_dentry->d_name.name, dst_dentry->d_name.len))
+	//eprintk("  dir ino: %d\n", dir->i_ino);
+
+	if(find_direntry(dir_oi, dst_dentry->d_name.name, dst_dentry->d_name.len))
 		return -EEXIST;
 
+	// get a directory entry
+	ospfs_direntry_t* direntry = create_blank_direntry(dir_oi);
+	if(IS_ERR(direntry))
+		return PTR_ERR(direntry);
 
+	// set fields of directory entry
+	direntry->od_ino = src_dentry->d_inode->i_ino;
+	memcpy(direntry->od_name, dst_dentry->d_name.name, dst_dentry->d_name.len);
 
-	// set the inode number 
-	dst_dentry->d_inode->i_ino = src_dentry->d_inode->i_ino;
+	// increment link count
+	ospfs_inode(src_dentry->d_inode->i_ino)->oi_nlink++;
 
-	
+	//eprintk("Complete\n");
 
-	// make ospfs_direntry
-	struct ospfs_direntry od;
-	memset(&od, 0, sizeof(struct ospfs_direntry));
-	od.od_ino = dst_dentry->d_inode->i_ino;
-	memcpy(od.od_name, dst_dentry->d_name.name, dst_dentry->d_name.len);
-
-
-
-	return -EINVAL;
+	return 0;
 }
 
 // ospfs_create
