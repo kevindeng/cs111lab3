@@ -511,7 +511,7 @@ ospfs_unlink(struct inode *dirino, struct dentry *dentry)
 		return -ENOENT;
 	}
 
-	od->od_ino = 0;
+	memset(od, 0, sizeof(ospfs_direntry_t));
 	oi->oi_nlink--;
 
 	// clean up the file if it's dead
@@ -1449,6 +1449,7 @@ ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidat
 		return -ENOSPC; // out of inodes
 
 	// create the file
+	memset(empty_inode, 0, sizeof(ospfs_inode_t));
 	empty_inode->oi_size = 0;
 	empty_inode->oi_ftype = OSPFS_FTYPE_REG;
 	empty_inode->oi_nlink = 1;
