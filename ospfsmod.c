@@ -611,7 +611,7 @@ allocate_block(void)
 	}
 
 	// if you got here, no block was allocated, disk is full
-	eprintk("The disk is full, no block allocated");
+	eprintk("The disk is full, no block allocated\n");
  	//disk is full
 	return 0;
 }
@@ -1461,7 +1461,7 @@ ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dent
 static int
 ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidata *nd)
 {
-	eprintk("create has been called");
+	//eprintk("create has been called");
 	ospfs_inode_t *dir_oi = ospfs_inode(dir->i_ino);
 	/* EXERCISE: Your code here. */
 
