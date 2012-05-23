@@ -1542,13 +1542,18 @@ ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 	ospfs_inode_t *dir_oi = ospfs_inode(dir->i_ino);
 	uint32_t entry_ino = 0;
 
-	if(dentry->d_name.len > OSPFS_MAXNAMELEN)
+	// check if it's a conditional symlink
+	char* p1 = strpbrk(symname, "?");
+	char* p2 = strpbrk(symname, ":");
+	int is_cond = p1 && p2;
+
+	if(dentry->d_name.len > OSPFS_MAXNAMELEN ||
+		!is_cond && strlen(symname) > OSPFS_MAXSYMLINKLEN ||
+		is_cond && strlen(symname) + (p2 - p1) > OSPFS_MAXSYMLINKLEN)
 		return -ENAMETOOLONG;
 
 	if(find_direntry(ospfs_inode(dir->i_ino), dentry->d_name.name, dentry->d_name.len))
 		return -EEXIST;
-
-
 
 	int status_create = ospfs_create(dir, dentry, dir_oi->oi_mode, symname);
 	/* EXERCISE: Your code here. */
@@ -1565,7 +1570,11 @@ ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 
 	symlink->oi_size = strlen(symname);
 	symlink->oi_ftype = OSPFS_FTYPE_SYMLINK;
-	memcpy(symlink->oi_symlink, symname, OSPFS_MAXSYMLINKLEN);
+	memcpy(symlink->oi_symlink, symname, strlen(symname));
+
+	// if its a conditional symlink, duplicate path 1 at the end of the symname
+	if(is_cond)
+		memcpy(symlink->oi_symlink + strlen(symname) + 1, p1 + 1, p2 - p1 - 1);
 
 	//eprintk("name of file that should be created: %s \n", dentry->d_name.name );
 
@@ -1605,7 +1614,23 @@ ospfs_follow_link(struct dentry *dentry, struct nameidata *nd)
 		(ospfs_symlink_inode_t *) ospfs_inode(dentry->d_inode->i_ino);
 	// Exercise: Your code here.
 
-	nd_set_link(nd, oi->oi_symlink);
+	char* expr = oi->oi_symlink;
+
+	// check if it's a conditional symlink
+	char* p1 = strpbrk(expr, "?");
+	char* p2 = strpbrk(expr, ":");
+	int is_cond = p1 && p2;
+
+	if(is_cond)
+	{
+		if(current->uid) // NOT root
+			nd_set_link(nd, p2 + 1);
+		else // root
+			nd_set_link(nd, expr + strlen(expr) + 1);
+	}
+	else
+		nd_set_link(nd, expr);
+
 	return (void *) 0;
 }
 
