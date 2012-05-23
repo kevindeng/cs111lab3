@@ -1447,15 +1447,41 @@ ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidat
 static int
 ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 {
+	//eprintk("symlink function was called! \n");
+	//pointer to corresponding inode data structure
 	ospfs_inode_t *dir_oi = ospfs_inode(dir->i_ino);
 	uint32_t entry_ino = 0;
 
+	if(dentry->d_name.len > OSPFS_MAXNAMELEN)
+		return -ENAMETOOLONG;
+
+	if(find_direntry(ospfs_inode(dir->i_ino), dentry->d_name.name, dentry->d_name.len))
+		return -EEXIST;
+
+
+
+	int status_create = ospfs_create(dir, dentry, dir_oi->oi_mode, symname);
 	/* EXERCISE: Your code here. */
-	return -EINVAL;
+	//create a file that points to given file 
+	if (status_create == 0){ //file creation succeeded
+		//eprintk("Link created successfully \n");
+		entry_ino = find_direntry(ospfs_inode(dir->i_ino), dentry->d_name.name, dentry->d_name.len)->od_ino;
+	} else {
+		//eprintk("Error creating link %i \n", status_create);
+		return status_create;
+	}
+
+	ospfs_symlink_inode_t *symlink = ospfs_inode(entry_ino); //create sym link
+
+	symlink->oi_size = strlen(symname);
+	symlink->oi_ftype = OSPFS_FTYPE_SYMLINK;
+	memcpy(symlink->oi_symlink, symname, OSPFS_MAXSYMLINKLEN);
+
+	//eprintk("name of file that should be created: %s \n", dentry->d_name.name );
 
 	/* Execute this code after your function has successfully created the
 	   file.  Set entry_ino to the created file's inode number before
-	   getting here. */
+	   getting here. 
 	{
 		struct inode *i = ospfs_mk_linux_inode(dir->i_sb, entry_ino);
 		if (!i)
@@ -1463,6 +1489,9 @@ ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 		d_instantiate(dentry, i);
 		return 0;
 	}
+	*/
+
+	return 0;
 }
 
 
